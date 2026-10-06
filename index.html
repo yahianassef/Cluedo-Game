@@ -1,0 +1,799 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Play a Cluedo-style murder mystery board game in your browser against computer detectives.">
+<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<title>Cluedo Manor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Limelight&family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=Courier+Prime:wght@400;700&display=swap">
+<style>
+/* Layout: board on the left as the hero, a case-file sidebar on the right; stacks on phones.
+   Deliberately single-theme: a night-time manor, lit by brass. */
+:root{
+  color-scheme:dark;
+  --ground:#15131d; --panel:#1f1c2b; --panel2:#29253a; --line:#3c3652;
+  --ink:#efe9da; --muted:#a8a1ba; --brass:#d1a94f; --brass-ink:#1b1508;
+  --tile:#cbbb8e; --tile-line:#ad9c6c; --room:#2c2739; --room-edge:#4a4262; --room-ink:#eadfc2;
+  --reach:#7be0a6; --danger:#e8675f; --steel:#8fa6bd;
+  --f-display:"Limelight","Rockwell","Georgia",serif;
+  --f-body:"IBM Plex Sans Condensed","Arial Narrow","Segoe UI",sans-serif;
+  --f-note:"Courier Prime","Courier New",monospace;
+}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{background:var(--ground);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,.tile:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+.app{max-width:1240px;margin:0 auto;padding:0 16px;padding-block:18px 32px}
+header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+h1{font-family:var(--f-display);font-weight:400;font-size:clamp(28px,4vw,40px);letter-spacing:.04em;margin:0;color:var(--brass);line-height:1}
+.tag{margin:4px 0 0;color:var(--muted)}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:20px;align-items:start}
+@media (max-width:920px){.layout{grid-template-columns:minmax(0,1fr)}}
+
+/* ---------- board ---------- */
+.boardWrap{container-type:inline-size;max-width:700px;width:100%;margin:0 auto}
+#board{display:grid;grid-template-columns:repeat(24,1fr);grid-template-rows:repeat(25,1fr);aspect-ratio:24/25;width:100%;max-width:100%;background:#0f0d15;border:3px solid var(--room-edge);border-radius:6px;padding:2px;position:relative;user-select:none}
+.cell{background:var(--tile);box-shadow:inset 0 0 0 .5px var(--tile-line)}
+.cell.start{background:#b9a46e}
+.cell.reach{background:var(--reach);cursor:pointer;animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{50%{filter:brightness(1.15)}}
+.room{background:var(--room);border:2px solid var(--room-edge);border-radius:3px;display:flex;flex-direction:column;align-items:center;padding-top:1.2cqw;gap:.4cqw;text-align:center;overflow:hidden;position:relative}
+.room.reach{outline:3px solid var(--reach);outline-offset:-3px;cursor:pointer;background:#2f3b37}
+.room.here{border-color:var(--brass)}
+.rname{font-family:var(--f-display);color:var(--room-ink);font-size:2.3cqw;letter-spacing:.04em;line-height:1.05}
+.wpns{display:flex;flex-wrap:wrap;justify-content:center;gap:.3cqw;padding:0 .5cqw}
+.wpn{font-size:1.45cqw;color:var(--steel);border:1px solid #485870;border-radius:2cqw;padding:0 .7cqw;line-height:1.5}
+.pass{position:absolute;font-size:1.3cqw;color:var(--brass);opacity:.85;padding:.3cqw .6cqw}
+.center{background:repeating-linear-gradient(45deg,#1b1826 0 6px,#211d2e 6px 12px);border:2px solid var(--brass);border-radius:3px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.6cqw;text-align:center}
+.center b{font-family:var(--f-display);font-weight:400;color:var(--brass);font-size:2.6cqw}
+.center span{font-size:1.5cqw;color:var(--muted)}
+.door{pointer-events:none;z-index:2}
+.door[data-side=left]{box-shadow:inset .7cqw 0 0 var(--brass)}
+.door[data-side=right]{box-shadow:inset -.7cqw 0 0 var(--brass)}
+.door[data-side=top]{box-shadow:inset 0 .7cqw 0 var(--brass)}
+.door[data-side=bottom]{box-shadow:inset 0 -.7cqw 0 var(--brass)}
+.token{place-self:center;width:80%;aspect-ratio:1;max-width:100%;border-radius:50%;background:var(--c);border:2px solid rgba(0,0,0,.6);box-shadow:0 1px 3px rgba(0,0,0,.7);z-index:3;pointer-events:none;display:grid;place-items:center;font-size:1.6cqw;font-weight:600;color:rgba(0,0,0,.7)}
+.token.me{outline:2px solid var(--brass);outline-offset:1px}
+.token.turn{animation:bob 1s ease-in-out infinite}
+@keyframes bob{50%{transform:translateY(-12%)}}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px;color:var(--muted);font-size:13px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--c);margin-right:5px;vertical-align:-1px}
+
+/* ---------- sidebar ---------- */
+aside{display:flex;flex-direction:column;gap:14px;min-width:0}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px}
+.box h2{font-family:var(--f-display);font-weight:400;font-size:17px;letter-spacing:.06em;color:var(--brass);margin:0 0 10px}
+.label{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:12px 0 6px}
+.label:first-child{margin-top:0}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+.btn{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:8px 14px}
+.btn:hover:not(:disabled){border-color:var(--brass)}
+.btn.primary{background:var(--brass);color:var(--brass-ink);border-color:var(--brass);font-weight:600}
+.btn.primary:hover:not(:disabled){filter:brightness(1.08)}
+.btn.danger{border-color:#7a3a36;color:#ffb3ad}
+.btn:disabled{opacity:.45;cursor:default}
+.status{font-size:16px;margin:0 0 10px}
+.dice{font-size:40px;line-height:1;letter-spacing:4px;color:var(--ink);margin:0 0 8px}
+.players{display:flex;flex-direction:column;gap:4px;margin-top:12px}
+.pl{display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:5px;font-size:14px}
+.pl.cur{background:var(--panel2)}
+.pl.out{opacity:.45;text-decoration:line-through}
+.dot{width:12px;height:12px;border-radius:50%;background:var(--c);flex:none;border:1px solid rgba(0,0,0,.5)}
+.pl small{margin-left:auto;color:var(--muted);font-variant-numeric:tabular-nums}
+.hand{display:flex;flex-wrap:wrap;gap:6px}
+.card{border:1px solid var(--line);border-left:4px solid var(--c);background:var(--panel2);border-radius:4px;padding:4px 9px;font-size:13.5px}
+.pick{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.pick button{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:8px 4px;display:flex;flex-direction:column;align-items:center;gap:5px;font-size:13px}
+.pick button[aria-pressed=true]{border-color:var(--brass);box-shadow:0 0 0 1px var(--brass)}
+.pick button:disabled{opacity:.35;cursor:default}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.seg button{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:6px 12px;font-variant-numeric:tabular-nums}
+.seg button[aria-pressed=true]{border-color:var(--brass);color:var(--brass)}
+.hint{color:var(--muted);font-size:13.5px;margin:8px 0 0}
+
+/* detective notepad */
+.notes{font-family:var(--f-note);font-size:14px;background:#efe6cc;color:#2a2418;border-radius:6px;padding:10px 12px;box-shadow:inset 0 0 0 1px #cdbf98}
+.notes h3{font-family:var(--f-note);font-size:12px;letter-spacing:.12em;text-transform:uppercase;margin:8px 0 2px;color:#7a2a2a}
+.notes h3:first-child{margin-top:0}
+.nrow{display:flex;align-items:center;gap:8px;border-bottom:1px dashed #c9b98f;padding:1px 0}
+.nrow span{flex:1;min-width:0}
+.nrow em{font-style:normal;font-size:12px;color:#6b5f45}
+.mark{width:30px;height:22px;border:1px solid #b9a77a;background:#f7f0dc;border-radius:3px;font-family:var(--f-note);font-weight:700;color:#2a2418;padding:0}
+.mark.x{color:#9c2d2d}.mark.ok{color:#2d6b3c}
+.nrow.dead span{text-decoration:line-through;color:#8a7d60}
+
+.log{max-height:240px;overflow-y:auto;display:flex;flex-direction:column;gap:5px;font-size:13.5px}
+.log p{margin:0;color:var(--muted)}
+.log p.sug{color:var(--ink)}
+.log p.you{color:var(--reach)}
+.log p.key{color:var(--brass)}
+.log b{color:var(--ink)}
+
+/* modal */
+#modal{position:fixed;inset:0;background:rgba(8,6,12,.72);display:grid;place-items:center;padding:16px;z-index:20}
+.sheet{background:var(--panel);border:1px solid var(--brass);border-radius:10px;padding:18px;width:min(560px,100%);max-height:90vh;overflow-y:auto}
+.sheet h2{font-family:var(--f-display);font-weight:400;color:var(--brass);margin:0 0 6px;font-size:22px;letter-spacing:.04em;text-wrap:balance}
+.sheet p{margin:0 0 10px}
+.sheet .btns{margin-top:16px;justify-content:flex-end}
+.reveal{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.reveal .card{font-size:15px;padding:8px 12px}
+@media (prefers-reduced-motion:reduce){.cell.reach,.token.turn{animation:none}}
+</style>
+
+<div class="app">
+  <header>
+    <div>
+      <h1>Cluedo Manor</h1>
+      <p class="tag">Dr Black is dead. Find out who did it, with what, and where.</p>
+    </div>
+    <button class="btn" id="newBtn" hidden>New game</button>
+  </header>
+
+  <div class="layout">
+    <div>
+      <div class="boardWrap"><div id="board" aria-label="Game board"></div></div>
+      <div class="legend" id="legend"></div>
+    </div>
+
+    <aside>
+      <section class="box" id="setup">
+        <h2>New case</h2>
+        <div class="label">Play as</div>
+        <div class="pick" id="pickMe"></div>
+        <div class="label">Opponents (computer detectives)</div>
+        <div class="seg" id="pickN"></div>
+        <div class="label">Opponent skill</div>
+        <div class="seg" id="pickLevel"></div>
+        <div class="label">Opponent speed</div>
+        <div class="seg" id="pickSpeed"></div>
+        <div class="btns" style="margin-top:16px"><button class="btn primary" id="startBtn">Start game</button></div>
+        <p class="hint">Roll, move into rooms, make suggestions, and note which cards other players show you. When you're sure, make an accusation. A wrong accusation ends your game.</p>
+      </section>
+
+      <section class="box" id="turnBox" hidden>
+        <h2>Turn</h2>
+        <div id="turn"></div>
+        <div class="players" id="players"></div>
+      </section>
+
+      <section class="box" id="handBox" hidden>
+        <h2>Your cards</h2>
+        <div class="hand" id="hand"></div>
+      </section>
+
+      <section class="box" id="notesBox" hidden>
+        <h2>Detective notes</h2>
+        <div class="notes" id="notes"></div>
+        <p class="hint">Tap a box to cycle ✗ / ✓ / ?. Your own cards and cards shown to you are crossed off for you.</p>
+      </section>
+
+      <section class="box" id="logBox" hidden>
+        <h2>Case log</h2>
+        <div class="log" id="log" aria-live="polite"></div>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<div id="modal" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
+
+<script>
+(() => {
+const W = 24, H = 25;
+const SUSPECTS = [
+  {id:'scarlett', name:'Miss Scarlett',   color:'#d8333f', start:[7,24]},
+  {id:'mustard',  name:'Colonel Mustard', color:'#e2b13c', start:[0,17]},
+  {id:'white',    name:'Mrs White',       color:'#f1ede4', start:[9,0]},
+  {id:'green',    name:'Reverend Green',  color:'#2e9b5b', start:[14,0]},
+  {id:'peacock',  name:'Mrs Peacock',     color:'#3a74d6', start:[23,6]},
+  {id:'plum',     name:'Professor Plum',  color:'#9255b8', start:[23,19]},
+];
+const WEAPONS = [
+  {id:'candlestick', name:'Candlestick'}, {id:'dagger', name:'Dagger'}, {id:'pipe', name:'Lead Pipe'},
+  {id:'revolver', name:'Revolver'}, {id:'rope', name:'Rope'}, {id:'spanner', name:'Spanner'},
+];
+// r = [x0,y0,x1,y1] inclusive; doors = [roomX,roomY, outsideX,outsideY]
+const ROOMS = [
+  {id:'kitchen',      name:'Kitchen',       r:[0,1,5,6],    doors:[[4,6,4,7]], passage:'study'},
+  {id:'ballroom',     name:'Ballroom',      r:[8,1,15,7],   doors:[[8,5,7,5],[15,5,16,5],[9,7,9,8],[14,7,14,8]]},
+  {id:'conservatory', name:'Conservatory',  r:[18,1,23,5],  doors:[[18,4,17,4]], passage:'lounge'},
+  {id:'dining',       name:'Dining Room',   r:[0,9,7,15],   doors:[[7,12,8,12],[6,15,6,16]]},
+  {id:'billiard',     name:'Billiard Room', r:[18,8,23,12], doors:[[18,9,17,9],[22,12,22,13]]},
+  {id:'library',      name:'Library',       r:[17,14,23,18],doors:[[17,16,16,16],[20,14,20,13]]},
+  {id:'lounge',       name:'Lounge',        r:[0,19,6,24],  doors:[[6,19,6,18]], passage:'conservatory'},
+  {id:'hall',         name:'Hall',          r:[9,18,14,24], doors:[[11,18,11,17],[12,18,12,17],[14,20,15,20]]},
+  {id:'study',        name:'Study',         r:[17,21,23,24],doors:[[17,21,16,21]], passage:'kitchen'},
+];
+const CENTER = [10,10,14,16];
+const TYPES = ['suspect','weapon','room'];
+const DIRS = [[1,0],[-1,0],[0,1],[0,-1]];
+const DICE = ['','⚀','⚁','⚂','⚃','⚄','⚅'];
+
+const ROOM = Object.fromEntries(ROOMS.map(r => [r.id, r]));
+const SUS = Object.fromEntries(SUSPECTS.map(s => [s.id, s]));
+const CARDS = [
+  ...SUSPECTS.map(s => ({id:s.id, name:s.name, type:'suspect', color:s.color})),
+  ...WEAPONS.map(w => ({id:w.id, name:w.name, type:'weapon', color:'var(--steel)'})),
+  ...ROOMS.map(r => ({id:r.id, name:r.name, type:'room', color:'var(--brass)'})),
+];
+const CARD = Object.fromEntries(CARDS.map(c => [c.id, c]));
+
+const $ = s => document.querySelector(s);
+const key = (x, y) => x + ',' + y;
+const inRect = (x, y, r) => x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3];
+const rnd = a => a[Math.floor(Math.random() * a.length)];
+const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+
+// ---------- board geometry ----------
+const CORR = new Set();
+for (let y = 0; y < H; y++) for (let x = 0; x < W; x++)
+  if (!inRect(x, y, CENTER) && !ROOMS.some(r => inRect(x, y, r.r))) CORR.add(key(x, y));
+const isCorr = (x, y) => CORR.has(key(x, y));
+const DOOR_OUT = {};
+ROOMS.forEach(r => r.doors.forEach(d => (DOOR_OUT[key(d[2], d[3])] ||= []).push(r.id)));
+
+// distance (ignoring other tokens) from every corridor square to each room's doorways
+const DIST = {};
+ROOMS.forEach(r => {
+  const dm = Array.from({length:H}, () => Array(W).fill(Infinity));
+  const q = [];
+  r.doors.forEach(d => { dm[d[3]][d[2]] = 0; q.push([d[2], d[3]]); });
+  while (q.length) {
+    const [x, y] = q.shift();
+    for (const [dx, dy] of DIRS) {
+      const nx = x + dx, ny = y + dy;
+      if (isCorr(nx, ny) && dm[ny][nx] === Infinity) { dm[ny][nx] = dm[y][x] + 1; q.push([nx, ny]); }
+    }
+  }
+  DIST[r.id] = dm;
+});
+function distTo(pos, rid) {
+  if (pos.room === rid) return 0;
+  const dm = DIST[rid];
+  if (pos.room) return Math.min(...ROOM[pos.room].doors.map(d => dm[d[3]][d[2]] + 2));
+  return dm[pos.y][pos.x] + 1;
+}
+
+// ---------- deduction engine (used by computer players) ----------
+class Know {
+  constructor(n, self, hand, sizes) {
+    this.n = n; this.sizes = sizes; this.owner = {}; this.cons = [];
+    this.lacks = Array.from({length:n}, () => new Set());
+    CARDS.forEach(c => { if (hand.includes(c.id)) this.owner[c.id] = self; else this.lacks[self].add(c.id); });
+    this.prop();
+  }
+  env(type) { return CARDS.find(c => c.type === type && this.owner[c.id] === 'E'); }
+  canBeE(id) { const o = this.owner[id]; if (o === 'E') return true; if (o !== undefined) return false; return !this.env(CARD[id].type); }
+  solved() { return TYPES.every(t => this.env(t)); }
+  noShow(p, cards) { cards.forEach(c => this.lacks[p].add(c)); this.prop(); }
+  shown(p, c) { if (this.owner[c] === undefined) this.owner[c] = p; this.prop(); }
+  showedOne(p, cards) { this.cons.push({p, cards}); this.prop(); }
+  prop() {
+    let ch = true, guard = 0;
+    while (ch && guard++ < 500) {
+      ch = false;
+      for (const c of CARDS) {
+        const id = c.id, o = this.owner[id];
+        if (o !== undefined) {
+          for (let p = 0; p < this.n; p++) if (p !== o && !this.lacks[p].has(id)) { this.lacks[p].add(id); ch = true; }
+        } else {
+          const cands = [];
+          for (let p = 0; p < this.n; p++) if (!this.lacks[p].has(id)) cands.push(p);
+          const eOk = !this.env(c.type);
+          if (cands.length === 0 && eOk) { this.owner[id] = 'E'; ch = true; }
+          else if (cands.length === 1 && !eOk) { this.owner[id] = cands[0]; ch = true; }
+        }
+      }
+      for (const t of TYPES) {
+        if (this.env(t)) continue;
+        const poss = CARDS.filter(c => c.type === t && this.owner[c.id] === undefined);
+        if (poss.length === 1) { this.owner[poss[0].id] = 'E'; ch = true; }
+      }
+      for (let p = 0; p < this.n; p++) {
+        if (CARDS.filter(c => this.owner[c.id] === p).length !== this.sizes[p]) continue;
+        for (const c of CARDS) if (this.owner[c.id] !== p && !this.lacks[p].has(c.id)) { this.lacks[p].add(c.id); ch = true; }
+      }
+      this.cons = this.cons.filter(k => {
+        if (k.cards.some(c => this.owner[c] === k.p)) return false;
+        const left = k.cards.filter(c => !this.lacks[k.p].has(c));
+        if (left.length === 1 && this.owner[left[0]] === undefined) { this.owner[left[0]] = k.p; ch = true; return false; }
+        return true;
+      });
+    }
+  }
+}
+
+// ---------- state ----------
+let G = null;
+const setup = {me:'scarlett', n:3, speed:900, sharp:false};
+const DEAD = Symbol('dead');
+const wait = (g, f = 1) => new Promise((res, rej) => setTimeout(() => g.dead ? rej(DEAD) : res(), g.delay * f));
+const nm = i => G.players[i].human ? 'You' : SUS[G.players[i].sid].name;
+const nmObj = i => G.players[i].human ? 'you' : SUS[G.players[i].sid].name;
+function startPositions() { return Object.fromEntries(SUSPECTS.map(s => [s.id, {x:s.start[0], y:s.start[1]}])); }
+
+function log(html, cls = '') {
+  G.log.unshift({html, cls});
+  if (G.log.length > 80) G.log.pop();
+  renderLog();
+}
+
+// ---------- board rendering ----------
+const cellEl = {}, roomEl = {}, tokenEl = {};
+function buildBoard() {
+  const b = $('#board');
+  const place = (el, x0, y0, x1 = x0, y1 = y0) => { el.style.gridColumn = `${x0 + 1} / ${x1 + 2}`; el.style.gridRow = `${y0 + 1} / ${y1 + 2}`; b.appendChild(el); return el; };
+  const starts = new Set(SUSPECTS.map(s => key(...s.start)));
+  CORR.forEach(k => {
+    const [x, y] = k.split(',').map(Number);
+    const el = document.createElement('div');
+    el.className = 'cell' + (starts.has(k) ? ' start' : '');
+    el.dataset.cell = k;
+    cellEl[k] = place(el, x, y);
+  });
+  ROOMS.forEach(r => {
+    const el = document.createElement('div');
+    el.className = 'room'; el.dataset.room = r.id;
+    el.innerHTML = `<span class="rname">${r.name}</span><span class="wpns"></span>` +
+      (r.passage ? `<span class="pass" style="${passPos(r)}">↗ ${ROOM[r.passage].name}</span>` : '');
+    roomEl[r.id] = place(el, ...r.r);
+    r.doors.forEach(d => {
+      const dEl = document.createElement('div');
+      dEl.className = 'door';
+      dEl.dataset.side = d[2] < d[0] ? 'left' : d[2] > d[0] ? 'right' : d[3] < d[1] ? 'top' : 'bottom';
+      place(dEl, d[0], d[1]);
+    });
+  });
+  const c = document.createElement('div');
+  c.className = 'center';
+  c.innerHTML = '<b>Case File</b><span>Who? With what? Where?</span>';
+  place(c, ...CENTER);
+  SUSPECTS.forEach(s => {
+    const t = document.createElement('div');
+    t.className = 'token'; t.style.setProperty('--c', s.color);
+    t.textContent = s.name.split(' ').pop()[0];
+    t.title = s.name;
+    tokenEl[s.id] = t; b.appendChild(t);
+  });
+  $('#legend').innerHTML = SUSPECTS.map(s => `<span><i style="--c:${s.color}"></i>${s.name}</span>`).join('') +
+    '<span>Brass edges mark doors</span>';
+}
+function passPos(r) {
+  // put the secret passage label in the room's outer corner
+  const right = r.r[0] > 10, bottom = r.r[1] > 12;
+  return `${bottom ? 'bottom' : 'top'}:0;${right ? 'right' : 'left'}:0;`;
+}
+
+function renderBoard() {
+  const pos = G ? G.pos : startPositions();
+  const inRoom = {};
+  SUSPECTS.forEach(s => {
+    const p = pos[s.id], t = tokenEl[s.id];
+    let x, y;
+    if (p.room) {
+      const r = ROOM[p.room].r, w = r[2] - r[0] + 1;
+      const i = (inRoom[p.room] = (inRoom[p.room] || 0) + 1) - 1;
+      x = r[0] + (i % w); y = r[3] - Math.floor(i / w);
+    } else { x = p.x; y = p.y; }
+    t.style.gridColumn = x + 1; t.style.gridRow = y + 1;
+    const pl = G && G.players.find(q => q.sid === s.id);
+    t.classList.toggle('me', !!(pl && pl.human));
+    t.classList.toggle('turn', !!(G && !G.over && G.players[G.turn].sid === s.id));
+  });
+  ROOMS.forEach(r => {
+    const ws = G ? WEAPONS.filter(w => G.weaponRoom[w.id] === r.id) : [];
+    roomEl[r.id].querySelector('.wpns').innerHTML = ws.map(w => `<span class="wpn">${w.name}</span>`).join('');
+    roomEl[r.id].classList.toggle('reach', !!(G && G.reach && G.reach.rooms.has(r.id)));
+    const me = G && G.pos[G.players[G.human].sid];
+    roomEl[r.id].classList.toggle('here', !!(me && me.room === r.id));
+  });
+  Object.entries(cellEl).forEach(([k, el]) => el.classList.toggle('reach', !!(G && G.reach && G.reach.cells.has(k))));
+}
+
+// ---------- movement ----------
+function reachable(sid, steps) {
+  const occ = new Set();
+  SUSPECTS.forEach(s => { if (s.id !== sid) { const q = G.pos[s.id]; if (!q.room) occ.add(key(q.x, q.y)); } });
+  const pos = G.pos[sid], cur = pos.room, dist = new Map(), queue = [];
+  if (cur) ROOM[cur].doors.forEach(d => { const k = key(d[2], d[3]); if (!occ.has(k) && !dist.has(k)) { dist.set(k, 1); queue.push([d[2], d[3]]); } });
+  else { dist.set(key(pos.x, pos.y), 0); queue.push([pos.x, pos.y]); }
+  while (queue.length) {
+    const [x, y] = queue.shift(), d = dist.get(key(x, y));
+    if (d >= steps) continue;
+    for (const [dx, dy] of DIRS) {
+      const nx = x + dx, ny = y + dy, k = key(nx, ny);
+      if (!isCorr(nx, ny) || occ.has(k) || dist.has(k)) continue;
+      dist.set(k, d + 1); queue.push([nx, ny]);
+    }
+  }
+  const cells = new Set(), rooms = new Set();
+  for (const [k, d] of dist) {
+    if (d >= 1 && d <= steps) cells.add(k);
+    if (d < steps && DOOR_OUT[k]) DOOR_OUT[k].forEach(r => { if (r !== cur) rooms.add(r); });
+  }
+  return {cells, rooms};
+}
+const roll = () => [1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)];
+
+// ---------- game setup ----------
+function newGame() {
+  if (G) G.dead = true;
+  const others = shuffle(SUSPECTS.filter(s => s.id !== setup.me)).slice(0, setup.n).map(s => s.id);
+  const order = SUSPECTS.map(s => s.id).filter(id => id === setup.me || others.includes(id));
+  const solution = {
+    suspect: rnd(SUSPECTS).id, weapon: rnd(WEAPONS).id, room: rnd(ROOMS).id,
+  };
+  const deck = shuffle(CARDS.map(c => c.id).filter(id => !Object.values(solution).includes(id)));
+  const players = order.map(sid => ({sid, human: sid === setup.me, hand: [], out: false, draggedIn: false, shownTo: {}}));
+  deck.forEach((c, i) => players[i % players.length].hand.push(c));
+  const sizes = players.map(p => p.hand.length);
+  players.forEach((p, i) => { if (!p.human) p.know = new Know(players.length, i, p.hand, sizes); });
+  const roomsShuffled = shuffle(ROOMS.map(r => r.id));
+  G = {
+    players, solution, pos: startPositions(), turn: 0, phase: 'wait', reach: null, dice: null,
+    weaponRoom: Object.fromEntries(WEAPONS.map((w, i) => [w.id, roomsShuffled[i]])),
+    human: players.findIndex(p => p.human), notes: {}, seen: {}, log: [], over: false, dead: false, delay: setup.speed, sharp: setup.sharp,
+  };
+  $('#setup').hidden = true;
+  ['#turnBox', '#handBox', '#notesBox', '#logBox', '#newBtn'].forEach(s => $(s).hidden = false);
+  log(`The game begins with ${players.length} detectives. ${players[0].human ? 'You go' : SUS[players[0].sid].name + ' goes'} first.`, 'key');
+  render();
+  runTurns(G).catch(e => { if (e !== DEAD) console.error(e); });
+}
+
+async function runTurns(g) {
+  while (!g.over && !g.dead) {
+    const p = g.players[g.turn];
+    if (!p.out) { if (p.human) await humanTurn(g); else await botTurn(g.turn, g); }
+    if (g.over || g.dead) break;
+    const alive = g.players.filter(q => !q.out);
+    if (alive.length === 1) { endGame(g.players.indexOf(alive[0]), 'last'); break; }
+    g.turn = (g.turn + 1) % g.players.length;
+    g.dice = null; g.reach = null;
+    render();
+  }
+}
+
+// ---------- suggestions ----------
+async function resolveSuggestion(i, cards, g) {
+  const [s, w, r] = cards;
+  const sug = G.players[i];
+  if (G.pos[s].room !== r) {
+    G.pos[s] = {room: r};
+    const pl = G.players.find(p => p.sid === s);
+    if (pl && pl !== sug) pl.draggedIn = true;
+  }
+  G.weaponRoom[w] = r;
+  log(`<b>${nm(i)}</b> ${sug.human ? 'suggest' : 'suggests'} ${CARD[s].name} with the ${CARD[w].name} in the ${CARD[r].name}.`, 'sug');
+  render();
+  const n = G.players.length;
+  for (let j = 1; j < n; j++) {
+    const pi = (i + j) % n, p = G.players[pi];
+    const m = p.hand.filter(c => cards.includes(c));
+    if (!m.length) {
+      G.players.forEach((b, bi) => { if (b.know && bi !== pi) b.know.noShow(pi, cards); });
+      log(`${nm(pi)} ${p.human ? "can't" : "can't"} disprove it.`);
+      continue;
+    }
+    let card;
+    if (p.human) {
+      card = await askShow(m, i);
+      if (g.dead) throw DEAD;
+    } else {
+      await wait(g, .6);
+      const prev = m.filter(c => p.shownTo[i] && p.shownTo[i].has(c));
+      card = rnd(prev.length ? prev : m);
+    }
+    (p.shownTo[i] ||= new Set()).add(card);
+    G.players.forEach((b, bi) => {
+      if (!b.know || bi === pi) return;
+      if (bi === i) b.know.shown(pi, card); else if (G.sharp) b.know.showedOne(pi, cards);
+    });
+    if (sug.human) { G.seen[card] = pi; log(`${nm(pi)} shows you <b>${CARD[card].name}</b>.`, 'you'); }
+    else if (p.human) log(`You show <b>${CARD[card].name}</b> to ${nm(i)}.`, 'you');
+    else log(`${nm(pi)} shows a card to ${nmObj(i)}.`);
+    render();
+    return {by: pi, card};
+  }
+  log('Nobody can disprove it.', 'key');
+  render();
+  return null;
+}
+
+// ---------- computer players ----------
+function pickFor(k, type) {
+  const e = k.env(type);
+  if (e) return e.id;
+  const poss = CARDS.filter(c => c.type === type && k.canBeE(c.id));
+  return rnd(poss.length ? poss : CARDS.filter(c => c.type === type)).id;
+}
+async function botSuggest(i, g) {
+  const p = G.players[i], room = G.pos[p.sid].room;
+  await wait(g, .7);
+  await resolveSuggestion(i, [pickFor(p.know, 'suspect'), pickFor(p.know, 'weapon'), room], g);
+}
+async function botTurn(i, g) {
+  const p = G.players[i], k = p.know, sid = p.sid, name = SUS[sid].name;
+  render();
+  await wait(g);
+  if (k.solved()) return botAccuse(i);
+  const pos = G.pos[sid];
+  const cand = ROOMS.map(r => r.id).filter(r => k.canBeE(r));
+  if (pos.room && p.draggedIn && cand.includes(pos.room)) {
+    p.draggedIn = false;
+    log(`${name} stays in the ${ROOM[pos.room].name}.`);
+    await botSuggest(i, g);
+  } else {
+    p.draggedIn = false;
+    let targets = cand.filter(r => r !== pos.room);
+    if (!targets.length) targets = ROOMS.map(r => r.id).filter(r => r !== pos.room);
+    targets.sort((a, b) => distTo(pos, a) - distTo(pos, b));
+    const pass = pos.room && ROOM[pos.room].passage;
+    if (pass && targets.includes(pass) && distTo(pos, pass) >= 6) {
+      G.pos[sid] = {room: pass};
+      log(`${name} takes the secret passage to the ${ROOM[pass].name}.`);
+      render();
+      await botSuggest(i, g);
+    } else {
+      G.dice = roll(); const steps = G.dice[0] + G.dice[1];
+      render();
+      await wait(g, .7);
+      const R = reachable(sid, steps);
+      const inReach = targets.filter(r => R.rooms.has(r));
+      if (inReach.length) {
+        G.pos[sid] = {room: inReach[0]};
+        log(`${name} rolls ${steps} and enters the ${ROOM[inReach[0]].name}.`);
+        render();
+        await botSuggest(i, g);
+      } else {
+        const tgt = targets[0];
+        let best = null, bv = Infinity;
+        for (const kk of R.cells) {
+          const [x, y] = kk.split(',').map(Number), v = DIST[tgt][y][x];
+          if (v < bv) { bv = v; best = {x, y}; }
+        }
+        if (best) G.pos[sid] = best;
+        log(`${name} rolls ${steps}${best ? ' and heads for the ' + ROOM[tgt].name : ' but is blocked'}.`);
+        render();
+      }
+    }
+  }
+  if (!G.over && k.solved()) { await wait(g); botAccuse(i); }
+}
+function botAccuse(i) {
+  const k = G.players[i].know;
+  const acc = TYPES.map(t => k.env(t).id);
+  log(`<b>${nm(i)}</b> accuses ${CARD[acc[0]].name} with the ${CARD[acc[1]].name} in the ${CARD[acc[2]].name}!`, 'key');
+  if (isSolution(acc)) endGame(i, 'solved');
+  else { G.players[i].out = true; log(`${nm(i)} is wrong and is out of the game.`, 'key'); render(); }
+}
+const isSolution = a => a[0] === G.solution.suspect && a[1] === G.solution.weapon && a[2] === G.solution.room;
+
+function endGame(i, how) {
+  G.over = true; G.phase = 'over'; G.reach = null;
+  render();
+  const sol = [G.solution.suspect, G.solution.weapon, G.solution.room];
+  const human = i === G.human;
+  const title = human ? 'Case closed. You solved it!' : how === 'humanWrong' ? 'Wrong accusation' : `${nm(i)} solved the case`;
+  const lead = how === 'humanWrong' ? "Your accusation was wrong, so you're out. Here's what really happened:" :
+    how === 'last' && !human ? `${nm(i)} is the last detective standing. The answer was:` : 'It was:';
+  modal(`<h2>${title}</h2><p>${lead}</p>
+    <div class="reveal">${sol.map(cardChip).join('')}</div>
+    <div class="btns"><button class="btn" data-v="close">Look at the board</button><button class="btn primary" data-v="new">New game</button></div>`,
+    (root, done) => root.querySelectorAll('[data-v]').forEach(b => b.onclick = () => done(b.dataset.v))
+  ).then(v => { if (v === 'new') showSetup(); });
+}
+
+// ---------- human turn ----------
+function humanTurn(g) {
+  return new Promise(res => { G.phase = 'start'; G.reach = null; G.dice = null; G.endTurn = res; render(); });
+}
+async function act(a) {
+  const g = G, me = G.players[G.human], sid = me.sid, pos = G.pos[sid];
+  try {
+    if (a === 'roll' && G.phase === 'start') {
+      me.draggedIn = false;
+      G.dice = roll();
+      const steps = G.dice[0] + G.dice[1];
+      G.reach = reachable(sid, steps);
+      if (!G.reach.cells.size && !G.reach.rooms.size) { G.reach = null; G.phase = 'end'; log(`You roll ${steps} but you're boxed in.`); }
+      else G.phase = 'move';
+      render();
+    } else if (a === 'pass' && G.phase === 'start' && pos.room && ROOM[pos.room].passage) {
+      me.draggedIn = false;
+      const to = ROOM[pos.room].passage;
+      G.pos[sid] = {room: to};
+      log(`You take the secret passage to the ${ROOM[to].name}.`);
+      await humanSuggest(g);
+    } else if (a === 'stay' && G.phase === 'start' && me.draggedIn) {
+      me.draggedIn = false;
+      await humanSuggest(g);
+    } else if (a === 'accuse' && (G.phase === 'start' || G.phase === 'end' || G.phase === 'move')) {
+      const pick = await pickModal('accuse');
+      if (!pick || g.dead) return;
+      log(`<b>You</b> accuse ${CARD[pick[0]].name} with the ${CARD[pick[1]].name} in the ${CARD[pick[2]].name}!`, 'key');
+      if (isSolution(pick)) endGame(G.human, 'solved');
+      else { me.out = true; endGame(G.human, 'humanWrong'); }
+      G.endTurn && G.endTurn();
+    } else if (a === 'end' && (G.phase === 'end' || G.phase === 'move')) {
+      G.phase = 'wait'; G.reach = null;
+      G.endTurn();
+    }
+  } catch (e) { if (e !== DEAD) console.error(e); }
+}
+async function moveTo(target) {
+  const g = G, sid = G.players[G.human].sid;
+  if (target.room) {
+    G.pos[sid] = {room: target.room};
+    G.reach = null;
+    log(`You enter the ${ROOM[target.room].name}.`);
+    try { await humanSuggest(g); } catch (e) { if (e !== DEAD) console.error(e); }
+  } else {
+    G.pos[sid] = target; G.reach = null; G.phase = 'end'; render();
+  }
+}
+async function humanSuggest(g) {
+  G.phase = 'busy'; render();
+  const room = G.pos[G.players[G.human].sid].room;
+  const pick = await pickModal('suggest', room);
+  if (g.dead) return;
+  if (pick) {
+    const res = await resolveSuggestion(G.human, pick, g);
+    if (g.dead) return;
+    await modal(res
+      ? `<h2>${nm(res.by)} shows you a card</h2><div class="reveal">${cardChip(res.card)}</div><p class="hint">It's crossed off in your notes.</p><div class="btns"><button class="btn primary" data-v="ok">Got it</button></div>`
+      : `<h2>Nobody could disprove it</h2><p>None of the other players hold ${CARD[pick[0]].name}, the ${CARD[pick[1]].name} or the ${CARD[pick[2]].name}. Any of them you don't hold yourself must be in the case file.</p><div class="btns"><button class="btn primary" data-v="ok">Got it</button></div>`,
+      (root, done) => root.querySelector('[data-v]').onclick = () => done());
+  }
+  G.phase = 'end'; render();
+}
+
+// ---------- modals ----------
+function modal(html, wire) {
+  const m = $('#modal'), s = $('#sheet');
+  s.innerHTML = html; m.hidden = false;
+  return new Promise(res => wire(s, v => { m.hidden = true; res(v); }));
+}
+const cardChip = id => `<span class="card" style="--c:${CARD[id].color}">${CARD[id].name}</span>`;
+function pickGroup(type, fixed) {
+  return `<div class="label">${type === 'suspect' ? 'Who' : type === 'weapon' ? 'With what' : 'Where'}</div>
+  <div class="pick" data-group="${type}">${CARDS.filter(c => c.type === type).map(c =>
+    `<button type="button" data-id="${c.id}" aria-pressed="${fixed === c.id}" ${fixed && fixed !== c.id ? 'disabled' : ''}>
+      ${type === 'suspect' ? `<span class="dot" style="--c:${c.color}"></span>` : ''}${c.name}</button>`).join('')}</div>`;
+}
+function pickModal(kind, room) {
+  const sug = kind === 'suggest';
+  const html = `<h2>${sug ? `Suggestion in the ${ROOM[room].name}` : 'Make an accusation'}</h2>
+    <p>${sug ? 'Name a suspect and a weapon. The other players, in turn, must show you one of the cards if they can.' : "Name the murderer, weapon and room. If you're wrong, you're out of the game."}</p>
+    ${pickGroup('suspect')}${pickGroup('weapon')}${sug ? '' : pickGroup('room')}
+    <div class="btns"><button class="btn" data-v="cancel">${sug ? 'Skip suggestion' : 'Cancel'}</button>
+    <button class="btn ${sug ? 'primary' : 'danger'}" data-v="ok" disabled>${sug ? 'Suggest' : 'Accuse'}</button></div>`;
+  return modal(html, (root, done) => {
+    const sel = {suspect: null, weapon: null, room: sug ? room : null};
+    const ok = root.querySelector('[data-v=ok]');
+    root.querySelectorAll('.pick').forEach(grp => grp.addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b || b.disabled) return;
+      grp.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+      sel[grp.dataset.group] = b.dataset.id;
+      ok.disabled = !(sel.suspect && sel.weapon && sel.room);
+    }));
+    ok.onclick = () => done([sel.suspect, sel.weapon, sel.room]);
+    root.querySelector('[data-v=cancel]').onclick = () => done(null);
+  });
+}
+function askShow(matches, i) {
+  const last = G.log[0];
+  return modal(`<h2>${nm(i)} needs an answer</h2>
+    <p>${last ? last.html : ''}</p><p>You hold ${matches.length > 1 ? 'more than one of these. Choose which card to show' : 'one of these, so you must show it'}. Only ${nm(i)} will see it.</p>
+    <div class="pick">${matches.map(id => `<button type="button" data-id="${id}">${CARD[id].name}</button>`).join('')}</div>`,
+    (root, done) => root.querySelectorAll('[data-id]').forEach(b => b.onclick = () => done(b.dataset.id)));
+}
+
+// ---------- side panel rendering ----------
+function render() {
+  renderBoard();
+  if (!G) return;
+  renderTurn(); renderHand(); renderNotes();
+}
+function renderTurn() {
+  const cur = G.players[G.turn], me = G.players[G.human], pos = G.pos[me.sid];
+  const dice = G.dice ? `<p class="dice" aria-label="Dice ${G.dice[0]} and ${G.dice[1]}">${DICE[G.dice[0]]}${DICE[G.dice[1]]}</p>` : '';
+  let h = '';
+  const where = pos.room ? `in the ${ROOM[pos.room].name}` : 'in the corridor';
+  if (G.over) h = `<p class="status">The game is over.</p><div class="btns"><button class="btn primary" data-act="new">New game</button></div>`;
+  else if (!cur.human) h = `${dice}<p class="status"><b>${SUS[cur.sid].name}</b> is taking a turn…</p>`;
+  else if (G.phase === 'start') {
+    const pass = pos.room && ROOM[pos.room].passage;
+    h = `<p class="status">Your turn. You're ${where}.${me.draggedIn ? ' You were moved here by a suggestion, so you may suggest without moving.' : ''}</p>
+      <div class="btns"><button class="btn primary" data-act="roll">Roll dice</button>
+      ${pass ? `<button class="btn" data-act="pass">Secret passage to ${ROOM[pass].name}</button>` : ''}
+      ${me.draggedIn ? `<button class="btn" data-act="stay">Suggest here</button>` : ''}
+      <button class="btn danger" data-act="accuse">Accuse</button></div>`;
+  } else if (G.phase === 'move') {
+    h = `${dice}<p class="status">You rolled ${G.dice[0] + G.dice[1]}. Tap a green square or a highlighted room to move.</p>
+      <div class="btns"><button class="btn" data-act="end">Don't move, end turn</button></div>`;
+  } else if (G.phase === 'end') {
+    h = `${dice}<p class="status">You're ${where}. Accuse now, or end your turn.</p>
+      <div class="btns"><button class="btn primary" data-act="end">End turn</button><button class="btn danger" data-act="accuse">Accuse</button></div>`;
+  } else h = `${dice}<p class="status">Waiting for the other players…</p>`;
+  $('#turn').innerHTML = h;
+  $('#players').innerHTML = G.players.map((p, i) => `<div class="pl ${i === G.turn && !G.over ? 'cur' : ''} ${p.out ? 'out' : ''}">
+    <span class="dot" style="--c:${SUS[p.sid].color}"></span>${SUS[p.sid].name}${p.human ? ' (you)' : ''}<small>${p.hand.length} cards</small></div>`).join('');
+}
+function renderHand() {
+  $('#hand').innerHTML = G.players[G.human].hand.slice().sort((a, b) => CARDS.indexOf(CARD[a]) - CARDS.indexOf(CARD[b])).map(cardChip).join('');
+}
+const MARKS = ['', '✗', '✓', '?'];
+function renderNotes() {
+  const me = G.players[G.human];
+  $('#notes').innerHTML = TYPES.map(t => `<h3>${t === 'suspect' ? 'Suspects' : t === 'weapon' ? 'Weapons' : 'Rooms'}</h3>` +
+    CARDS.filter(c => c.type === t).map(c => {
+      const mine = me.hand.includes(c.id), seen = G.seen[c.id];
+      const auto = mine ? 'yours' : seen !== undefined ? 'from ' + SUS[G.players[seen].sid].name.split(' ').pop() : '';
+      const m = auto ? '✗' : (G.notes[c.id] || '');
+      return `<div class="nrow ${auto || m === '✗' ? 'dead' : ''}"><span>${c.name}</span>${auto ? `<em>${auto}</em>` : ''}
+        <button class="mark ${m === '✗' ? 'x' : m === '✓' ? 'ok' : ''}" data-note="${c.id}" ${auto ? 'disabled' : ''} aria-label="Mark ${c.name}">${m}</button></div>`;
+    }).join('')).join('');
+}
+function renderLog() {
+  $('#log').innerHTML = G.log.map(l => `<p class="${l.cls}">${l.html}</p>`).join('');
+}
+
+// ---------- setup screen ----------
+function renderSetup() {
+  $('#pickMe').innerHTML = SUSPECTS.map(s => `<button type="button" data-me="${s.id}" aria-pressed="${setup.me === s.id}"><span class="dot" style="--c:${s.color}"></span>${s.name}</button>`).join('');
+  $('#pickN').innerHTML = [2, 3, 4, 5].map(n => `<button type="button" data-n="${n}" aria-pressed="${setup.n === n}">${n}</button>`).join('');
+  $('#pickLevel').innerHTML = [['Casual', 0], ['Sharp', 1]].map(([l, v]) => `<button type="button" data-level="${v}" aria-pressed="${setup.sharp === !!v}">${l}</button>`).join('');
+  $('#pickSpeed').innerHTML = [['Relaxed', 1300], ['Normal', 900], ['Fast', 350]].map(([l, v]) => `<button type="button" data-speed="${v}" aria-pressed="${setup.speed === v}">${l}</button>`).join('');
+}
+function showSetup() {
+  if (G) G.dead = true;
+  G = null;
+  $('#modal').hidden = true;
+  $('#setup').hidden = false;
+  ['#turnBox', '#handBox', '#notesBox', '#logBox', '#newBtn'].forEach(s => $(s).hidden = true);
+  renderSetup(); renderBoard();
+}
+
+// ---------- events ----------
+$('#setup').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.me) setup.me = b.dataset.me;
+  if (b.dataset.n) setup.n = +b.dataset.n;
+  if (b.dataset.speed) setup.speed = +b.dataset.speed;
+  if (b.dataset.level) setup.sharp = b.dataset.level === '1';
+  if (b.id === 'startBtn') return newGame();
+  renderSetup();
+});
+$('#newBtn').onclick = showSetup;
+$('#turn').addEventListener('click', e => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  if (b.dataset.act === 'new') showSetup(); else act(b.dataset.act);
+});
+$('#board').addEventListener('click', e => {
+  if (!G || G.phase !== 'move' || !G.reach) return;
+  const c = e.target.closest('[data-cell]'), r = e.target.closest('[data-room]');
+  if (c && G.reach.cells.has(c.dataset.cell)) { const [x, y] = c.dataset.cell.split(',').map(Number); moveTo({x, y}); }
+  else if (r && G.reach.rooms.has(r.dataset.room)) moveTo({room: r.dataset.room});
+});
+$('#notes').addEventListener('click', e => {
+  const b = e.target.closest('[data-note]'); if (!b || !G) return;
+  const cur = G.notes[b.dataset.note] || '';
+  G.notes[b.dataset.note] = MARKS[(MARKS.indexOf(cur) + 1) % MARKS.length];
+  renderNotes();
+});
+
+buildBoard();
+renderSetup();
+renderBoard();
+})();
+</script>
+
+</body>
+</html>
